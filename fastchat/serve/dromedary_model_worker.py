@@ -402,7 +402,7 @@ if __name__ == "__main__":
                 temperature=temperature_tensor[0],
                 top_p=top_p_tensor[0],
                 stop=stop,
-                quadtoken_frequency_penalty=1.0,
+                unitoken_frequency_penalty=0.3,
             )[0]
 
     conv_template = get_default_conv_template(args.model_name)
