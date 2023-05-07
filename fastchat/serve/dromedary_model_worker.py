@@ -8,9 +8,10 @@ import logging
 import json
 import os
 import time
-from typing import List, Union
+from typing import List, Union, Tuple
 import threading
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -38,6 +39,12 @@ from fastchat.serve.inference import load_model, generate_stream, add_model_args
 from fastchat.serve.serve_chatglm import chatglm_generate_stream
 from fastchat.serve.serve_dromedary import dromedary_generate_stream
 from fastchat.utils import build_logger, server_error_msg, pretty_print_semaphore
+from fastchat.conversation import get_default_conv_template
+
+
+from fairscale.nn.model_parallel import initialize as mpu
+from fairscale.nn.model_parallel.initialize import initialize_model_parallel
+from llama_dromedary import ModelArgs, Transformer, Tokenizer, LLaMA
 
 GB = 1 << 30
 
@@ -61,20 +68,19 @@ class DromeadryModelWorker:
         worker_addr,
         worker_id,
         no_register,
-        model_path,
+        generator,
         model_name,
         device,
         num_gpus,
         max_gpu_memory,
         load_8bit=False,
         cpu_offloading=False,
+        tokenizer_path=None,
     ):
         self.controller_addr = controller_addr
         self.worker_addr = worker_addr
         self.worker_id = worker_id
-        if model_path.endswith("/"):
-            model_path = model_path[:-1]
-        self.model_name = model_name or model_path.split("/")[-1]
+        self.model_name = model_name
         self.device = device
 
         logger.info(f"Loading the model {self.model_name} on worker {worker_id} ...")
@@ -88,6 +94,9 @@ class DromeadryModelWorker:
             raise NotImplementedError("8-bit model is not supported for Dromedary")
         if cpu_offloading:
             raise NotImplementedError("CPU offloading is not supported for Dromedary")
+
+        self.model = generator.generate
+        self.tokenizer = generator.tokenizer
 
         # if hasattr(self.model.config, "max_sequence_length"):
         #     self.context_len = self.model.config.max_sequence_length
@@ -253,6 +262,66 @@ async def api_get_status(request: Request):
     return worker.get_status()
 
 
+def setup_model_parallel() -> Tuple[int, int]:
+    local_rank = int(os.environ.get("LOCAL_RANK", -1))
+    global_rank = int(os.environ.get("RANK", -1))
+    world_size = int(os.environ.get("WORLD_SIZE", -1))
+
+    torch.distributed.init_process_group("nccl")
+    initialize_model_parallel(world_size, pipeline_length=1)
+    print("Model parallelism:", mpu.get_model_parallel_world_size())
+    print("Global rank:", global_rank, "World size:", world_size)
+    torch.cuda.set_device(local_rank)
+
+    # seed must be the same in all processes
+    torch.manual_seed(1)
+    return global_rank, world_size
+
+
+def load(
+    ckpt_dir: str,
+    tokenizer_path: str,
+    global_rank: int,
+    world_size: int,
+    max_seq_len: int,
+    max_batch_size: int,
+    max_shared_seq_len: int,
+) -> LLaMA:
+    start_time = time.time()
+    checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
+    assert world_size == len(
+        checkpoints
+    ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {world_size}"
+    ckpt_path = checkpoints[global_rank]
+    print("Loading")
+    checkpoint = torch.load(ckpt_path, map_location="cpu")
+    with open(Path(ckpt_dir) / "params.json", "r") as f:
+        params = json.loads(f.read())
+
+    model_args: ModelArgs = ModelArgs(
+        max_seq_len=max_seq_len, max_batch_size=max_batch_size, **params
+    )
+    tokenizer = Tokenizer(model_path=tokenizer_path)
+
+    model_args.vocab_size = tokenizer.n_words
+    if model_args.qkv_dim != 0:
+        print("Original n_heads:", model_args.n_heads)
+        model_args.n_heads = (model_args.n_heads * model_args.qkv_dim) // model_args.dim
+        print("New n_heads:", model_args.n_heads)
+    model_args.max_shared_seq_len = max_shared_seq_len
+    model_args.use_prefix_cache = True
+
+    torch.set_default_tensor_type(torch.cuda.HalfTensor)
+    model = Transformer(model_args)
+    model.load_state_dict(checkpoint, strict=False)
+    model.eval()
+    model.half()
+
+    generator = LLaMA(model, tokenizer)
+    print(f"Loaded in {time.time() - start_time:.2f} seconds")
+    return generator
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="localhost")
@@ -262,7 +331,8 @@ if __name__ == "__main__":
         "--controller-address", type=str, default="http://localhost:21001"
     )
     add_model_args(parser)
-    parser.add_argument("--model-name", type=str, help="Optional display name")
+    parser.add_argument("--model-name", type=str, required=True, help="Optional display name")
+    parser.add_argument("--tokenizer-path", type=str, required=True, help="Path to tokenizer")
     parser.add_argument("--limit-model-concurrency", type=int, default=5)
     parser.add_argument("--stream-interval", type=int, default=2)
     parser.add_argument("--no-register", action="store_true")
@@ -276,12 +346,76 @@ if __name__ == "__main__":
             )
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
 
+    global_rank, world_size = setup_model_parallel()
+
+    max_seq_len = 2048
+    max_batch_size = 1
+    max_shared_seq_len = 0
+
+    t0 = time.time()
+    generator = load(
+        args.model_path, args.tokenizer_path,
+        global_rank, world_size,
+        max_seq_len,
+        max_batch_size,
+        max_shared_seq_len,
+    )
+    t1 = time.time()
+    loading_time = t1-t0
+    global_rank = torch.distributed.get_rank()
+    print("Model loading time on %d: " % global_rank, loading_time)
+
+    def run_fake_evaluate(stop):
+        while True:
+            prompt = "Fake prompt"
+            # sync the process with torch.distributed.barrier
+            # TODO(zhiqings): find a better way to sync the processes, and avoid timeout in barrier
+            # torch.distributed.barrier()
+            fake_tensor = torch.zeros(1, dtype=torch.long, device="cuda")
+            torch.distributed.recv(fake_tensor, src=0)
+
+            # sync the prompt string across all processes
+            prompt_tensor = torch.zeros(4096, dtype=torch.long, device="cuda") + generator.tokenizer.pad_id
+            tokenized_prompt = generator.tokenizer.encode(prompt, bos=True, eos=False)
+            prompt_tensor[:len(tokenized_prompt)] = torch.tensor(tokenized_prompt, dtype=torch.long, device="cuda")
+            torch.distributed.broadcast(prompt_tensor, 0)
+            t = prompt_tensor.tolist()
+            try:
+                t = t[: t.index(generator.tokenizer.pad_id)]
+            except ValueError:
+                pass
+            prompt = generator.tokenizer.decode(t)
+
+            temperature_tensor = torch.tensor([0.0], dtype=torch.float, device="cuda")
+            torch.distributed.broadcast(temperature_tensor, 0)
+
+            top_p_tensor = torch.tensor([0.0], dtype=torch.float, device="cuda")
+            torch.distributed.broadcast(top_p_tensor, 0)
+
+            max_new_tokens_tensor = torch.tensor([0], dtype=torch.long, device="cuda")
+            torch.distributed.broadcast(max_new_tokens_tensor, 0)
+
+            # time.sleep(0.1 * global_rank)
+            output = generator.generate(
+                [prompt],
+                max_gen_len=max_new_tokens_tensor[0],
+                temperature=temperature_tensor[0],
+                top_p=top_p_tensor[0],
+                stop=stop,
+                quadtoken_frequency_penalty=1.0,
+            )[0]
+
+    conv_template = get_default_conv_template(args.model_name)
+
+    if global_rank != 0:
+        run_fake_evaluate(stop=conv_template.stop_str)
+
     worker = DromeadryModelWorker(
         args.controller_address,
         args.worker_address,
         worker_id,
         args.no_register,
-        args.model_path,
+        generator,
         args.model_name,
         args.device,
         args.num_gpus,

@@ -251,7 +251,7 @@ def generate_stream(
                 tmp_output_ids = output_ids[input_echo_len:]
                 rfind_start = 0
 
-            output = tokenizer.decode(tmp_output_ids, skip_special_tokens=True, 
+            output = tokenizer.decode(tmp_output_ids, skip_special_tokens=True,
                                       spaces_between_special_tokens=False)
             if stop_str:
                 pos = output.rfind(stop_str, rfind_start)

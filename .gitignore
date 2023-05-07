@@ -22,3 +22,5 @@ output
 
 # Data
 *.pkl
+
+*.log.*
