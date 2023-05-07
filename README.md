@@ -1,13 +1,18 @@
 # FastChat for Dromedary
 
-This is a patch for deploying Dromedary on FastChat with model parallel infenrence. Below is some information copied from the original README.md.
+This is a patch for deploying **Dromedary** on **FastChat** with model parallel infenrence.
 
 ## FastChat
+
+Below is some information copied from the original [FastChat](https://github.com/lm-sys/FastChat/) README.md.
 
 | [**Demo**](https://chat.lmsys.org/) | [**Arena**](https://arena.lmsys.org) | [**Discord**](https://discord.gg/h6kCZb72G7) | [**Twitter**](https://twitter.com/lmsysorg) |
 
 An open platform for training, serving, and evaluating large language model based chatbots.
 
+## Dromedary
+
+[Dromedary](https://github.com/IBM/Dromedary) is an open-source self-aligned language model trained with minimal human supervision.  For comprehensive details and insights, we kindly direct you to our [project page](https://mitibmdemos.draco.res.ibm.com/dromedary) and [paper](https://arxiv.org/abs/2305.03047).
 
 ### Citation
 
