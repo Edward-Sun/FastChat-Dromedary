@@ -183,7 +183,7 @@ conv_dromedary = Conversation(
             "Dromedary",
             "You can solve this problem using a function that iterates through the characters of the input strings and compares them. "
             "Here's a sample Python program to find the longest common prefix string amongst an array of strings:\n\n"
-            "```python\ndef longest_common_prefix(strs):\n"
+            "```\ndef longest_common_prefix(strs):\n"
             "    if not strs:\n"
             "        return \"\"\n\n"
             "    # Find the minimum length string in the input array\n"
