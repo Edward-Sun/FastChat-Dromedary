@@ -53,7 +53,7 @@ def dromedary_generate_stream(
             temperature=temperature,
             top_p=top_p,
             stop="### User",
-            unitoken_frequency_penalty=0.3,
+            unitoken_frequency_penalty=0.5,
             stream_queue=stream_queue,
         )[0]
 
