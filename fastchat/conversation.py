@@ -196,6 +196,36 @@ conv_dromedary = Conversation(
         ),
         (
             "User",
+            "Write a Python program to find the longest common prefix string amongst an array of strings.",
+        ),
+        (
+            "Dromedary",
+            "You can solve this problem using a function that iterates through the characters of the input strings and compares them. "
+            "Here's a sample Python program to find the longest common prefix string amongst an array of strings:\n\n"
+            "```python\ndef longest_common_prefix(strs):\n"
+            "    if not strs:\n"
+            "        return \"\"\n\n"
+            "    # Find the minimum length string in the input array\n"
+            "    min_length = min(len(s) for s in strs)\n\n"
+            "    # Initialize the result variable\n"
+            "    common_prefix = \"\"\n\n"
+            "    # Iterate through characters of the minimum length string\n"
+            "    for i in range(min_length):\n"
+            "        char = strs[0][i]\n\n"
+            "        # Check if the current character is the same in all strings\n"
+            "        if all(s[i] == char for s in strs):\n"
+            "            common_prefix += char\n"
+            "        else:\n"
+            "            break\n\n"
+            "    return common_prefix\n\n"
+            "# In coding tasks, we refrain from providing test examples to conserve space. "
+            "Hence, this marks the conclusion of the program.\n```\n"
+            "\nThis program defines a function `longest_common_prefix(strs)` that takes an array of strings `strs` as input and returns the longest common prefix string. "
+            "If the input array is empty, the function returns an empty string. "
+            "Otherwise, it iterates through the characters of the strings and compares them, building the common prefix as it goes."
+        ),
+        (
+            "User",
             "What are the key differences between renewable and non-renewable energy sources?",
         ),
         (
@@ -220,7 +250,7 @@ conv_dromedary = Conversation(
             "non-renewable sources are not, and their depletion can lead to economic and social instability.",
         ),
     ),
-    offset=4,
+    offset=6,
     sep_style=SeparatorStyle.DROMEDARY,
     sep="\n\n### ",
     stop_str="### User",
