@@ -17,11 +17,6 @@ def dromedary_generate_stream(
     stop_str = params.get("stop", None)
     echo = params.get("echo", True)
     assert echo is False, "echo is not supported in stream mode"
-    # input_ids = tokenizer(prompt).input_ids
-    # input_echo_len = len(input_ids)
-    # output_ids = list(input_ids)
-    max_src_len = context_len - max_new_tokens - 8
-    # input_ids = input_ids[-max_src_len:]
 
     world_size = int(os.environ.get("WORLD_SIZE", -1))
     # sync the process with torch.distributed.send
@@ -32,7 +27,6 @@ def dromedary_generate_stream(
     # sync the prompt string across all processes, max_len=4096
     prompt_tensor = torch.zeros(4096, dtype=torch.long, device="cuda") + tokenizer.pad_id
     tokenized_prompt = tokenizer.encode(prompt, bos=True, eos=False)
-    tokenized_prompt = tokenized_prompt[-max_src_len:]
 
     prompt_tensor[:len(tokenized_prompt)] = torch.tensor(tokenized_prompt, dtype=torch.long, device="cuda")
     torch.distributed.broadcast(prompt_tensor, 0)
