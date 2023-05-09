@@ -24,3 +24,4 @@ output
 *.pkl
 
 *.log.*
+dev_scripts
