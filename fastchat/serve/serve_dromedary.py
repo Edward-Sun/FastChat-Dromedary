@@ -9,7 +9,8 @@ import torch
 
 @torch.inference_mode()
 def dromedary_generate_stream(
-    model, tokenizer, params, device, context_len=2048, stream_interval=2, top_p=0.95,
+    model, tokenizer, params, device, context_len=2048,
+    stream_interval=2, top_p=0.95, model_max_new_tokens=768,
 ):
     prompt = params["prompt"]
     temperature = float(params.get("temperature", 1.0))
@@ -23,6 +24,10 @@ def dromedary_generate_stream(
     for i in range(world_size):
         if i != 0:
             torch.distributed.send(torch.tensor([1]), dst=i)
+
+    if max_new_tokens > model_max_new_tokens:
+        print(f"max_new_tokens: {max_new_tokens} is too large, reset to {model_max_new_tokens}")
+        max_new_tokens = model_max_new_tokens
 
     # sync the prompt string across all processes, max_len=4096
     prompt_tensor = torch.zeros(4096, dtype=torch.long, device="cuda") + tokenizer.pad_id
