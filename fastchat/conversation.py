@@ -181,7 +181,7 @@ conv_dromedary = Conversation(
         ),
         (
             "Dromedary",
-            "You can solve this problem using a function that iterates through the characters of the input strings and compares them. "
+            "I am happy to help you with that! You can solve this problem using a function that iterates through the characters of the input strings and compares them. "
             "Here's a sample Python program to find the longest common prefix string amongst an array of strings:\n\n"
             "```\ndef longest_common_prefix(strs):\n"
             "    if not strs:\n"
@@ -228,7 +228,7 @@ conv_dromedary = Conversation(
             "What are the key differences between renewable and non-renewable energy sources?",
         ),
         (
-            "Assistant",
+            "Dromedary",
             "Renewable energy sources are those that can be replenished naturally in a relatively "
             "short amount of time, such as solar, wind, hydro, geothermal, and biomass. "
             "Non-renewable energy sources, on the other hand, are finite and will eventually be "
