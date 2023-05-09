@@ -28,8 +28,6 @@ python3 -m fastchat.serve.controller --host 0.0.0.0 --port 21001 &
 set -x
 set -e
 
-export CUDA_VISIBLE_DEVICES=5
-
 CONTROLLER_IP=0.0.0.0
 CONTROLLER_PORT=21001
 WORKER_IP=$(hostname -I | cut -d' ' -f1)
@@ -40,7 +38,7 @@ export MODEL_DIR="path/to/your/ckpt/"
 CKPT_NAME="$MP-shards"
 
 export PYTHONPATH="$PWD:$PYTHONPATH"
-export CUDA_VISIBLE_DEVICES=3,6,7
+export CUDA_VISIBLE_DEVICES="YOUR_GPU_IDs"
 export SLURM_NNODES=1
 export SLURM_PROCID=0
 export MASTER_ADDR="0.0.0.0"

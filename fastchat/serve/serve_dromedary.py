@@ -1,5 +1,6 @@
 import gc
 import os
+import re
 import queue
 import threading
 
@@ -11,7 +12,6 @@ def dromedary_generate_stream(
     model, tokenizer, params, device, context_len=2048, stream_interval=2, top_p=0.95,
 ):
     prompt = params["prompt"]
-    len_prompt = len(prompt)
     temperature = float(params.get("temperature", 1.0))
     max_new_tokens = int(params.get("max_new_tokens", 256))
     stop_str = params.get("stop", None)
@@ -27,6 +27,23 @@ def dromedary_generate_stream(
     # sync the prompt string across all processes, max_len=4096
     prompt_tensor = torch.zeros(4096, dtype=torch.long, device="cuda") + tokenizer.pad_id
     tokenized_prompt = tokenizer.encode(prompt, bos=True, eos=False)
+
+    while True:
+        max_src_len = context_len - max_new_tokens - 8
+        if len(tokenized_prompt) > max_src_len:
+            first_user = re.search(stop_str, prompt)
+            sections = [prompt[:first_user.start()]] if first_user else [prompt]
+            sections += [prompt[m.start():m.end()] for m in re.finditer(f"({stop_str}.*?)(?={stop_str}|$)", prompt, re.DOTALL)]
+
+            if len(sections) > 1:
+                del sections[1]
+            else:
+                del sections[0]
+
+            prompt = "".join(sections)
+            tokenized_prompt = tokenizer.encode(prompt, bos=True, eos=False)
+        else:
+            break
 
     prompt_tensor[:len(tokenized_prompt)] = torch.tensor(tokenized_prompt, dtype=torch.long, device="cuda")
     torch.distributed.broadcast(prompt_tensor, 0)
@@ -52,7 +69,7 @@ def dromedary_generate_stream(
             max_gen_len=max_gen_len,
             temperature=temperature,
             top_p=top_p,
-            stop="### User",
+            stop=stop_str,
             unitoken_frequency_penalty=0.5,
             stream_queue=stream_queue,
         )[0]

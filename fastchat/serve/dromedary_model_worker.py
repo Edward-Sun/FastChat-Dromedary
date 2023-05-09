@@ -48,8 +48,6 @@ from llama_dromedary import ModelArgs, Transformer, Tokenizer, LLaMA
 
 GB = 1 << 30
 
-worker_id = str(uuid.uuid4())[:6]
-logger = build_logger("dromedary_model_worker", f"dromedary_model_worker_{worker_id}.log")
 global_counter = 0
 
 model_semaphore = None
@@ -322,6 +320,18 @@ def load(
     return generator
 
 
+class VoidLogger(logging.Logger):
+    def __init__(self, *args, **kwargs):
+        super(VoidLogger, self).__init__(*args, **kwargs)
+        self.addHandler(logging.NullHandler())
+
+    def isEnabledFor(self, level):
+        return False
+
+    def log(self, level, *args, **kwargs):
+        pass
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="localhost")
@@ -337,7 +347,6 @@ if __name__ == "__main__":
     parser.add_argument("--stream-interval", type=int, default=2)
     parser.add_argument("--no-register", action="store_true")
     args = parser.parse_args()
-    logger.info(f"args: {args}")
 
     if args.gpus:
         if len(args.gpus.split(",")) < args.num_gpus:
@@ -347,6 +356,14 @@ if __name__ == "__main__":
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
 
     global_rank, world_size = setup_model_parallel()
+
+    if global_rank == 0:
+        worker_id = str(uuid.uuid4())[:6]
+        logger = build_logger("dromedary_model_worker", f"dromedary_model_worker_{worker_id}.log")
+    else:
+        logger = VoidLogger("dromedary_void_model_worker")
+
+    logger.info(f"args: {args}")
 
     max_seq_len = 2048
     max_batch_size = 1
